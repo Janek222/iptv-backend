@@ -6,7 +6,7 @@ import httpx
 from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User
+from app.models import User
 import base64
 import secrets
 
