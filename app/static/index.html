@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JFork IPTV Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --accent: #3b82f6; --success: #22c55e; --danger: #ef4444; --border: #334155; --warning: #f59e0b; --info: #06b6d4; --inactive: #64748b; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; }
+    
+    /* AUTH */
+    #auth-screen { display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .auth-box { background: var(--card); padding: 2rem; border-radius: 12px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+    .auth-box h2 { margin-bottom: 1rem; color: var(--accent); }
+    input, select, textarea { width: 100%; padding: 0.8rem; margin-bottom: 1rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; }
+    button { padding: 0.8rem; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+    button:hover { opacity: 0.9; transform: translateY(-1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hint { text-align: center; margin-top: 1rem; font-size: 0.85rem; color: #64748b; cursor: pointer; }
+    .hint:hover { color: var(--accent); }
+    .error { color: var(--danger); font-size: 0.9rem; margin-top: 1rem; min-height: 1.2rem; }
+    
+    /* DASHBOARD */
+    #dashboard { display: none; min-height: 100vh; }
+    .sidebar { width: 240px; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 1.5rem; position: fixed; height: 100vh; left: 0; top: 0; z-index: 100; }
+    .sidebar h3 { margin-bottom: 2rem; color: var(--accent); font-size: 1.2rem; }
+    .nav-btn { background: transparent; text-align: left; margin-bottom: 0.5rem; border: 1px solid var(--border); width: 100%; }
+    .nav-btn.active { background: var(--accent); border-color: var(--accent); }
+    .logout-btn { margin-top: auto; background: var(--danger); }
+    .support-btn { background: var(--warning); color: #000; margin-bottom: 0.5rem; }
+    .main { flex: 1; padding: 2rem; margin-left: 240px; }
+    .section { display: none; }
+    .section.active { display: block; }
+    
+    /* TWO PANEL LAYOUT */
+    .two-panel { display: flex; gap: 1rem; height: calc(100vh - 100px); }
+    .left-panel { width: 300px; background: var(--card); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; }
+    .right-panel { flex: 1; background: var(--card); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; }
+    .panel-header { padding: 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .panel-content { flex: 1; overflow-y: auto; padding: 0.5rem; }
+    
+    /* GROUPS */
+    .group-item { padding: 0.8rem; margin-bottom: 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
+    .group-item:hover { border-color: var(--accent); }
+    .group-item.active { background: var(--accent); border-color: var(--accent); }
+    .count { background: var(--border); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; }
+    .toggle-group-btns { display: flex; gap: 0.3rem; margin-left: 0.5rem; }
+    .toggle-btn { padding: 0.2rem 0.5rem; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; }
+    .toggle-on { background: var(--success); color: white; }
+    .toggle-off { background: var(--danger); color: white; }
+    .toggle-btn:hover { opacity: 0.9; }
+    
+    /* CHANNELS */
+    .channel-item { padding: 0.8rem; margin-bottom: 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s; }
+    .channel-item:hover { border-color: var(--accent); }
+    .channel-item.inactive { opacity: 0.6; border-style: dashed; }
+    .channel-item.inactive .channel-info h4 { text-decoration: line-through; color: var(--inactive); }
+    .channel-item img { width: 32px; height: 32px; object-fit: contain; border-radius: 4px; background: #000; }
+    .channel-info { flex: 1; overflow: hidden; min-width: 0; }
+    .channel-info h4 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.3rem; }
+    .channel-info small { color: #94a3b8; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .channel-status { font-size: 0.7rem; padding: 0.2rem 0.4rem; border-radius: 4px; margin-left: 0.5rem; }
+    .status-active { background: var(--success); color: white; }
+    .status-inactive { background: var(--inactive); color: white; }
+    .actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+    .btn-small { padding: 0.4rem 0.5rem; font-size: 0.8rem; width: auto; min-width: 32px; display: flex; align-items: center; justify-content: center; }
+    .btn-danger { background: var(--danger); }
+    .btn-success { background: var(--success); }
+    .btn-warning { background: var(--warning); color: #000; }
+    .btn-info { background: var(--info); }
+    .btn-toggle { background: var(--border); }
+    .btn-toggle.active { background: var(--success); }
+    
+    /* MODALS */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-content { background: var(--card); padding: 1.5rem; border-radius: 12px; max-width: 900px; width: 95%; max-height: 95vh; overflow-y: auto; }
+    .modal-content input { text-align: left; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    label { display: block; margin-bottom: 0.5rem; color: #94a3b8; font-size: 0.9rem; }
+    
+    /* SAVE INDICATOR */
+    .save-indicator { position: fixed; bottom: 20px; right: 20px; background: var(--success); color: white; padding: 0.8rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; animation: slideIn 0.3s ease; z-index: 2000; }
+    @keyframes slideIn { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    
+    /* EXPORT */
+    .export-link-box { background: var(--bg); padding: 1rem; border-radius: 6px; margin: 1rem 0; word-break: break-all; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--border); }
+    .copy-btn { margin-top: 0.5rem; }
+    .export-section { margin: 1.5rem 0; }
+    .export-section h3 { margin-bottom: 0.5rem; color: var(--text); }
+    
+    /* VIDEO PLAYER */
+    #video-player { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; margin-bottom: 1rem; }
+    .stream-info { background: var(--bg); padding: 0.8rem; border-radius: 6px; margin-top: 0.5rem; font-size: 0.85rem; color: #94a3b8; word-break: break-all; }
+    .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; min-height: 300px; }
+    .video-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 1.2rem; }
+    .video-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--danger); text-align: center; padding: 2rem; }
+    
+    /* RESPONSIVE */
+    @media (max-width: 768px) { 
+      .two-panel { flex-direction: column; height: auto; } 
+      .left-panel, .right-panel { width: 100%; height: 400px; } 
+      .sidebar { width: 100%; height: auto; position: relative; } 
+      .main { margin-left: 0; } 
+      .panel-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="auth-screen">
+    <div class="auth-box">
+      <h2>📡 JFork IPTV</h2>
+      <div id="step-email">
+        <p style="color:#94a3b8; margin-bottom:1rem;">Введите email для кода</p>
+        <input type="email" id="auth-email" placeholder="name@example.com">
+        <button id="btn-email" onclick="requestCode()">Получить код</button>
+      </div>
+      <div id="step-code" style="display:none;">
+        <p style="color:#94a3b8; margin-bottom:1rem;">Код отправлен</p>
+        <input type="text" id="auth-code" placeholder="123456" maxlength="6" inputmode="numeric">
+        <button id="btn-code" onclick="verifyCode()">Войти</button>
+        <div class="hint" onclick="resetAuth()">← Изменить email</div>
+      </div>
+      <div id="auth-error" class="error"></div>
+    </div>
+  </div>
+
+  <div id="dashboard">
+    <div class="sidebar">
+      <h3>📡 JFork IPTV</h3>
+      <button class="nav-btn active" onclick="showSection('playlists')">📋 Плейлисты</button>
+      <button class="nav-btn" onclick="showSection('editor')">✏️ Редактор</button>
+      <a href="https://t.me/iptvfork4" target="_blank" style="text-decoration:none; width:100%;">
+        <button class="nav-btn support-btn" style="width:100%;">💬 Support</button>
+      </a>
+      <button class="nav-btn logout-btn" onclick="logout()">🚪 Выйти</button>
+    </div>
+
+    <div class="main">
+      <div id="playlists" class="section active">
+        <div class="auth-box" style="max-width:600px; text-align:left; margin:0 auto;">
+          <h2>📋 Мои плейлисты</h2>
+          <div style="display:flex; gap:1rem; margin-top:1rem;">
+            <input type="text" id="new-playlist-name" placeholder="Название..." style="margin:0;">
+            <button onclick="createPlaylist()" class="btn-success" style="width:auto;">➕ Создать</button>
+          </div>
+          <div id="playlists-list" style="margin-top:1.5rem;"></div>
+        </div>
+      </div>
+
+      <div id="editor" class="section">
+        <div class="two-panel">
+          <div class="left-panel">
+            <div class="panel-header">
+              <h3>📁 Группы</h3>
+              <div style="display:flex; gap:0.5rem;">
+                <button onclick="addGroup()" class="btn-small btn-success">+</button>
+                <button onclick="clearAllChannels()" class="btn-small btn-danger" title="Очистить плейлист">🗑️</button>
+              </div>
+            </div>
+            <div class="panel-content" id="groups-list"></div>
+          </div>
+
+          <div class="right-panel">
+            <div class="panel-header">
+              <h3>📺 Каналы</h3>
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button onclick="openExportModal()" class="btn-small btn-info">📤 Экспорт</button>
+                <button onclick="openImportModal()" class="btn-small btn-warning">📥 Импорт</button>
+                <button onclick="savePlaylist()" class="btn-small btn-success">💾 Сохранить</button>
+                <button onclick="openAddChannelModal()" class="btn-small btn-success">+ Канал</button>
+              </div>
+            </div>
+            <div class="panel-content" id="channels-list"><p style="padding:1rem; color:#64748b; text-align:center;">Выберите плейлист и группу</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channel Modal -->
+  <div id="channel-modal" class="modal">
+    <div class="modal-content">
+      <h2 style="margin-bottom:1.5rem;" id="modal-title">Канал</h2>
+      <label>Название</label><input type="text" id="ch-name">
+      <label>URL Потока</label><input type="text" id="ch-url">
+      <label>Группа</label><input type="text" id="ch-group">
+      <label>Логотип</label><input type="text" id="ch-logo">
+      <div class="form-grid">
+        <div><label>TVG ID</label><input type="text" id="ch-tvg-id"></div>
+        <div><label>Страна</label><input type="text" id="ch-country"></div>
+      </div>
+      <div style="margin-top:1rem;">
+        <label>
+          <input type="checkbox" id="ch-active" checked style="width:auto; margin-right:0.5rem;"> 
+          <span style="color:#94a3b8;">Активен</span>
+        </label>
+      </div>
+      <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+        <button onclick="saveChannel()" class="btn-success" style="flex:1;">💾 Сохранить</button>
+        <button onclick="closeModal('channel-modal')" style="flex:1; background:var(--border);">❌ Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div id="import-modal" class="modal">
+    <div class="modal-content">
+      <h2>📥 Импорт плейлиста</h2>
+      <div id="import-playlist-select-container"></div>
+      <label>URL M3U файла</label><input type="text" id="import-url" placeholder="http://...">
+      <div style="margin:1rem 0; text-align:center; color:#64748b;">или вставьте текст</div>
+      <textarea id="import-text" rows="5" style="width:100%; background:var(--bg); border:1px solid var(--border); color:white; padding:0.5rem; border-radius:6px;"></textarea>
+      <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+        <button onclick="performImport()" class="btn-success" style="flex:1;">Загрузить</button>
+        <button onclick="closeModal('import-modal')" style="flex:1; background:var(--border);">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div id="export-modal" class="modal">
+    <div class="modal-content">
+      <h2>📤 Экспорт плейлиста</h2>
+      <p style="color:#94a3b8; margin:1rem 0;">Скачайте плейлист или скопируйте прямую ссылку</p>
+      <div class="export-section">
+        <h3>📥 Скачать M3U файл</h3>
+        <button onclick="downloadPlaylist()" class="btn-success" style="width:100%;">💾 Скачать файл</button>
+      </div>
+      <div class="export-section">
+        <h3>🔗 Прямая ссылка</h3>
+        <p style="color:#64748b; font-size:0.85rem; margin-bottom:0.5rem;">Используйте эту ссылку в IPTV плеерах:</p>
+        <div class="export-link-box" id="export-link">Загрузка...</div>
+        <button onclick="copyExportLink()" class="btn-info copy-btn" style="width:100%;">📋 Копировать ссылку</button>
+      </div>
+      <div style="margin-top:1.5rem;">
+        <button onclick="closeModal('export-modal')" style="width:100%; background:var(--border);">❌ Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Player Modal -->
+  <div id="video-modal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+      <h2 style="margin-bottom:0.5rem;">📺 Просмотр канала</h2>
+      <p id="video-title" style="color:#94a3b8; margin-bottom:1rem; font-size:0.9rem;"></p>
+      
+      <div class="video-container">
+        <video id="video-player" controls autoplay playsinline></video>
+        <div id="video-loading" class="video-loading">⏳ Загрузка...</div>
+        <div id="video-error" class="video-error" style="display:none;">
+          <p style="font-size:1.2rem; margin-bottom:1rem;">❌ Не удалось воспроизвести поток</p>
+          <button onclick="openStreamInNewTab()" class="btn-success">🔗 Открыть в новой вкладке</button>
+        </div>
+      </div>
+      
+      <div class="stream-info" id="stream-url-display"></div>
+      <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+        <button onclick="copyStreamUrl()" class="btn-info" style="flex:1;">📋 Копировать ссылку</button>
+        <button onclick="openStreamInNewTab()" class="btn-success" style="flex:1;">🚀 Открыть в новой вкладке</button>
+        <button onclick="closeModal('video-modal')" style="flex:1; background:var(--border);">❌ Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="save-indicator" class="save-indicator">✅ Изменения сохранены!</div>
+
+  <script>
+    const API = 'https://iptv-backend-nxnm.onrender.com/api/v1';
+    const BASE_URL = 'https://iptv-backend-nxnm.onrender.com';
+    let token = localStorage.getItem('iptv_token');
+    let currentPlaylistId = null;
+    let currentPlaylistName = '';
+    let currentGroup = 'All';
+    let editingChannelId = null;
+    let groups = new Set(['General']);
+    let allChannels = [];
+    let hasChanges = false;
+    let hlsInstance = null;
+    let currentStreamUrl = '';
+    let originalStreamUrl = '';
+
+    if (token) showDashboard();
+
+    // ========== AUTH ==========
+    async function requestCode() {
+      const email = document.getElementById('auth-email').value.trim();
+      if(!email) return showError('Введите email');
+      toggleBtn('btn-email', 'Отправка...', true);
+      try {
+        const res = await fetch(`${API}/auth/request-code`, { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({email}) 
+        });
+        if(res.ok) { 
+          document.getElementById('step-email').style.display = 'none'; 
+          document.getElementById('step-code').style.display = 'block'; 
+        } else { 
+          const d = await res.json(); 
+          showError(d.detail || 'Ошибка'); 
+        }
+      } catch(e) { showError('Ошибка сети'); }
+      toggleBtn('btn-email', 'Получить код', false);
+    }
+
+    async function verifyCode() {
+      const email = document.getElementById('auth-email').value.trim();
+      const code = document.getElementById('auth-code').value.trim();
+      toggleBtn('btn-code', 'Проверка...', true);
+      try {
+        const res = await fetch(`${API}/auth/verify`, { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({email, code}) 
+        });
+        const d = await res.json();
+        if(res.ok && d.token) { 
+          token = d.token; 
+          localStorage.setItem('iptv_token', token); 
+          showDashboard(); 
+        } else showError(d.detail || 'Неверный код');
+      } catch(e) { showError('Ошибка сети'); }
+      toggleBtn('btn-code', 'Войти', false);
+    }
+
+    function showError(msg) { document.getElementById('auth-error').textContent = msg; }
+    function toggleBtn(id, text, disabled) { 
+      const b = document.getElementById(id); 
+      b.textContent = text; 
+      b.disabled = disabled; 
+    }
+    function resetAuth() { 
+      document.getElementById('step-code').style.display = 'none'; 
+      document.getElementById('step-email').style.display = 'block'; 
+    }
+    function logout() { 
+      localStorage.removeItem('iptv_token'); 
+      location.reload(); 
+    }
+
+    // ========== DASHBOARD ==========
+    function showDashboard() { 
+      document.getElementById('auth-screen').style.display = 'none'; 
+      document.getElementById('dashboard').style.display = 'block'; 
+      loadPlaylists(); 
+    }
+
+    function showSection(id) { 
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active')); 
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); 
+      document.getElementById(id).classList.add('active'); 
+    }
+
+    async function apiCall(endpoint, method='GET', body=null) {
+      const opts = { method, headers: {'Authorization': `Bearer ${token}`} };
+      if(body) { opts.headers['Content-Type']='application/json'; opts.body = JSON.stringify(body); }
+      const res = await fetch(`${API}${endpoint}`, opts);
+      if(!res.ok) throw new Error((await res.json()).detail || 'Error');
+      return res.json();
+    }
+
+    // ========== PLAYLISTS ==========
+    async function loadPlaylists() {
+      const list = await apiCall('/playlists');
+      const container = document.getElementById('playlists-list');
+      if(!list.length) { container.innerHTML = '<p style="color:#64748b">Нет плейлистов</p>'; return; }
+      container.innerHTML = list.map(p => `
+        <div style="padding:1rem; background:var(--bg); margin-bottom:0.5rem; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+          <span>${p.name}</span>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn-small btn-success" onclick="selectPlaylist(${p.id}, '${p.name}')">Открыть</button>
+            <button class="btn-small btn-danger" onclick="deletePlaylist(${p.id})">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function createPlaylist() {
+      const name = document.getElementById('new-playlist-name').value;
+      if(!name) return;
+      await apiCall('/playlists', 'POST', {name});
+      document.getElementById('new-playlist-name').value = '';
+      loadPlaylists();
+    }
+
+    async function deletePlaylist(id) {
+      if(!confirm('Удалить плейлист?')) return;
+      await apiCall(`/playlists/${id}`, 'DELETE');
+      loadPlaylists();
+    }
+
+    // ========== EDITOR ==========
+    async function selectPlaylist(id, name) {
+      currentPlaylistId = id;
+      currentPlaylistName = name;
+      showSection('editor');
+      hasChanges = false;
+      document.getElementById('channels-list').innerHTML = '<p style="padding:1rem; text-align:center">Загрузка...</p>';
+      document.getElementById('groups-list').innerHTML = '<p style="padding:1rem; text-align:center">Загрузка...</p>';
+      try {
+        const channels = await apiCall(`/playlists/${id}/channels`);
+        allChannels = channels;
+        groups = new Set(channels.map(c => c.group_title || 'General'));
+        groups.add('General');
+        renderGroups();
+        renderChannels('All');
+      } catch (e) { alert("Ошибка: " + e.message); }
+    }
+
+    // ========== RENDER GROUPS (с кнопками ON/OFF) ==========
+    function renderGroups() {
+      const list = Array.from(groups).sort();
+      const activeCounts = {};
+      allChannels.forEach(c => {
+        const g = c.group_title || 'General';
+        if(!activeCounts[g]) activeCounts[g] = {total: 0, active: 0};
+        activeCounts[g].total++;
+        if(c.active) activeCounts[g].active++;
+      });
+
+      document.getElementById('groups-list').innerHTML = `
+        <div class="group-item ${currentGroup==='All'?'active':''}" onclick="renderChannels('All')">
+          <span>Все</span>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="count">${allChannels.length}</span>
+            <div class="toggle-group-btns">
+              <button class="toggle-btn toggle-on" onclick="event.stopPropagation(); toggleGroup('All', true)">ON</button>
+              <button class="toggle-btn toggle-off" onclick="event.stopPropagation(); toggleGroup('All', false)">OFF</button>
+            </div>
+          </div>
+        </div>
+        ${list.map(g => {
+          const count = activeCounts[g] || {total: 0, active: 0};
+          if (count.total === 0) return '';
+          return `
+            <div class="group-item ${currentGroup===g?'active':''}" onclick="renderChannels('${g}')">
+              <span>${g}</span>
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="count">${count.active}/${count.total}</span>
+                ${g !== 'General' ? `
+                  <div class="toggle-group-btns">
+                    <button class="toggle-btn toggle-on" onclick="event.stopPropagation(); toggleGroup('${g}', true)">ON</button>
+                    <button class="toggle-btn toggle-off" onclick="event.stopPropagation(); toggleGroup('${g}', false)">OFF</button>
+                  </div>
+                  <button class="btn-small btn-danger" onclick="event.stopPropagation(); deleteGroup('${g}')">🗑️</button>
+                ` : `
+                  <div class="toggle-group-btns">
+                    <button class="toggle-btn toggle-on" onclick="event.stopPropagation(); toggleGroup('${g}', true)">ON</button>
+                    <button class="toggle-btn toggle-off" onclick="event.stopPropagation(); toggleGroup('${g}', false)">OFF</button>
+                  </div>
+                `}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      `;
+    }
+
+    // ========== RENDER CHANNELS (с визуальным статусом) ==========
+    function renderChannels(group) {
+      currentGroup = group;
+      renderGroups();
+      const filtered = group === 'All' ? allChannels : allChannels.filter(c => c.group_title === group);
+      const container = document.getElementById('channels-list');
+      
+      if(!filtered.length) { 
+        container.innerHTML = '<p style="padding:1rem; text-align:center; color:#64748b">Пусто</p>'; 
+        return; 
+      }
+      
+      container.innerHTML = filtered.map(c => `
+        <div class="channel-item ${c.active ? '' : 'inactive'}">
+          ${c.tvg_logo ? `<img src="${c.tvg_logo}" onerror="this.style.display='none'">` : ''}
+          <div class="channel-info">
+            <h4>${c.name}</h4>
+            <small>${c.url}</small>
+            <small style="color:var(--warning); margin-top:0.3rem;">📁 ${c.group_title || 'General'}</small>
+          </div>
+          <span class="channel-status ${c.active ? 'status-active' : 'status-inactive'}">
+            ${c.active ? '✓' : '✗'}
+          </span>
+          <div class="actions">
+            <button class="btn-small btn-toggle ${c.active ? 'active' : ''}" onclick="toggleChannel(${c.id})" title="${c.active ? 'Выключить' : 'Включить'}">
+              ${c.active ? '🔵' : '⚪'}
+            </button>
+            <button class="btn-small btn-info" onclick="moveChannel(${c.id})" title="Переместить">📤</button>
+            <button class="btn-small btn-success" onclick="openVideoPlayer('${c.url}', '${c.name}')" title="Смотреть">▶️</button>
+            <button class="btn-small" onclick="editChannel(${c.id})">✏️</button>
+            <button class="btn-small btn-danger" onclick="deleteChannel(${c.id})">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ========== CHANNEL TOGGLE ==========
+    async function toggleChannel(channelId) {
+      const ch = allChannels.find(c => c.id === channelId);
+      if(!ch) return;
+      try {
+        await apiCall(`/playlists/${currentPlaylistId}/channels/${channelId}/toggle`, 'PATCH');
+        hasChanges = true;
+        await selectPlaylist(currentPlaylistId, '');
+        showSaveIndicator();
+      } catch(e) { alert('Ошибка: ' + e.message); }
+    }
+
+    // ========== GROUP TOGGLE (массовое включение/выключение) ==========
+    async function toggleGroup(groupName, active) {
+      if(!confirm(`"${groupName}": ${active ? 'Включить' : 'Выключить'} все каналы?`)) return;
+      try {
+        await apiCall(`/playlists/${currentPlaylistId}/groups/${encodeURIComponent(groupName)}?active=${active}`, 'PATCH');
+        hasChanges = true;
+        await selectPlaylist(currentPlaylistId, '');
+        showSaveIndicator();
+      } catch(e) { alert('Ошибка: ' + e.message); }
+    }
+
+    // ========== CHANNEL MODAL ==========
+    function openAddChannelModal() {
+      editingChannelId = null;
+      document.getElementById('modal-title').textContent = 'Добавить канал';
+      document.getElementById('ch-name').value = '';
+      document.getElementById('ch-url').value = '';
+      document.getElementById('ch-group').value = currentGroup === 'All' ? 'General' : currentGroup;
+      document.getElementById('ch-logo').value = '';
+      document.getElementById('ch-tvg-id').value = '';
+      document.getElementById('ch-country').value = '';
+      document.getElementById('ch-active').checked = true;
+      document.getElementById('channel-modal').style.display = 'flex';
+    }
+
+    async function editChannel(id) {
+      const ch = allChannels.find(c => c.id === id);
+      if(!ch) return;
+      editingChannelId = id;
+      document.getElementById('modal-title').textContent = 'Редактировать';
+      document.getElementById('ch-name').value = ch.name;
+      document.getElementById('ch-url').value = ch.url;
+      document.getElementById('ch-group').value = ch.group_title || 'General';
+      document.getElementById('ch-logo').value = ch.tvg_logo || '';
+      document.getElementById('ch-tvg-id').value = ch.tvg_id || '';
+      document.getElementById('ch-country').value = ch.tvg_country || '';
+      document.getElementById('ch-active').checked = ch.active !== false;
+      document.getElementById('channel-modal').style.display = 'flex';
+    }
+
+    async function moveChannel(channelId) {
+      const ch = allChannels.find(c => c.id === channelId);
+      if(!ch) return;
+      const newGroup = prompt(`Выберите новую группу для канала "${ch.name}":\n\nДоступные: ${Array.from(groups).join(', ')}\n\nИли введите новую:`, ch.group_title || 'General');
+      if(newGroup && newGroup.trim()) {
+        try {
+          await apiCall(`/playlists/${currentPlaylistId}/channels/${channelId}`, 'PUT', { group_title: newGroup.trim() });
+          groups.add(newGroup.trim());
+          hasChanges = true;
+          await selectPlaylist(currentPlaylistId, '');
+          showSaveIndicator();
+        } catch(e) { alert('Ошибка: ' + e.message); }
+      }
+    }
+
+    async function saveChannel() {
+      const data = { 
+        name: document.getElementById('ch-name').value, 
+        url: document.getElementById('ch-url').value, 
+        group_title: document.getElementById('ch-group').value, 
+        tvg_logo: document.getElementById('ch-logo').value, 
+        tvg_id: document.getElementById('ch-tvg-id').value, 
+        tvg_country: document.getElementById('ch-country').value,
+        active: document.getElementById('ch-active').checked
+      };
+      if(!data.name || !data.url) return alert('Заполните название и URL');
+      try {
+        if(editingChannelId) await apiCall(`/playlists/${currentPlaylistId}/channels/${editingChannelId}`, 'PUT', data);
+        else await apiCall(`/playlists/${currentPlaylistId}/channels`, 'POST', data);
+        closeModal('channel-modal');
+        hasChanges = true;
+        await selectPlaylist(currentPlaylistId, '');
+        showSaveIndicator();
+      } catch(e) { alert(e.message); }
+    }
+
+    async function deleteChannel(id) {
+      if(!confirm('Удалить канал?')) return;
+      try {
+        await apiCall(`/playlists/${currentPlaylistId}/channels/${id}`, 'DELETE');
+        hasChanges = true;
+        await selectPlaylist(currentPlaylistId, '');
+        showSaveIndicator();
+      } catch(e) { alert(e.message); }
+    }
+
+    // ========== GROUP ACTIONS ==========
+    function addGroup() { const g = prompt('Название группы:'); if(g && g.trim()) { groups.add(g.trim()); renderGroups(); hasChanges = true; } }
+    
+    async function deleteGroup(groupName) {
+      if(!confirm(`⚠️ Удалить группу "${groupName}" и все каналы?`)) return;
+      try {
+        await apiCall(`/playlists/${currentPlaylistId}/groups/${encodeURIComponent(groupName)}`, 'DELETE');
+        groups.delete(groupName);
+        hasChanges = true;
+        await selectPlaylist(currentPlaylistId, '');
+        showSaveIndicator();
+      } catch(e) { alert('Ошибка: ' + e.message); }
+    }
+    
+    async function clearAllChannels() {
+      if(!confirm('⚠️ Удалить ВСЕ каналы?')) return;
+      try { 
+        await apiCall(`/playlists/${currentPlaylistId}/clear`, 'DELETE'); 
+        hasChanges = true; 
+        await selectPlaylist(currentPlaylistId, ''); 
+        showSaveIndicator(); 
+      } catch(e) { alert(e.message); }
+    }
+
+    // ========== SAVE & EXPORT ==========
+    function savePlaylist() { showSaveIndicator(); }
+    function showSaveIndicator() { 
+      const i = document.getElementById('save-indicator'); 
+      i.style.display = 'block'; 
+      setTimeout(() => i.style.display = 'none', 2000); 
+    }
+
+    // ✅ ИСПРАВЛЕНО: Запрос короткой ссылки через API
+    async function openExportModal() {
+      if(!currentPlaylistId) { alert('Сначала выберите плейлист!'); return; }
+      document.getElementById('export-modal').style.display = 'flex';
+      
+      const linkBox = document.getElementById('export-link');
+      linkBox.textContent = '⏳ Генерация ссылки...';
+      
+      try {
+        const response = await fetch(`${API}/playlists/${currentPlaylistId}/get-direct-link`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if(!response.ok) throw new Error('Не удалось получить ссылку');
+        
+        const data = await response.json();
+        linkBox.textContent = data.direct_link;
+        
+        // Авто-копирование
+        navigator.clipboard.writeText(data.direct_link).catch(() => {});
+        
+      } catch(e) {
+        console.error('Export error:', e);
+        linkBox.textContent = `${BASE_URL}/list/${token}/${currentPlaylistId}.m3u`;
+      }
+    }
+
+    // ✅ ИСПРАВЛЕНО: Скачивание по короткой ссылке
+    async function downloadPlaylist() {
+      if(!currentPlaylistId) return;
+      try {
+        const response = await fetch(`${API}/playlists/${currentPlaylistId}/get-direct-link`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if(!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+        
+        const data = await response.json();
+        const downloadUrl = data.direct_link;
+        
+        const fileResponse = await fetch(downloadUrl);
+        if(!fileResponse.ok) throw new Error(`Ошибка загрузки: ${fileResponse.status}`);
+        
+        const m3uContent = await fileResponse.text();
+        const blob = new Blob([m3uContent], { type: 'audio/x-mpegurl' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); 
+        a.href = url; 
+        a.download = `${currentPlaylistName || 'playlist'}.m3u`;
+        document.body.appendChild(a); 
+        a.click(); 
+        window.URL.revokeObjectURL(url); 
+        document.body.removeChild(a);
+        showSaveIndicator();
+        
+      } catch(e) { 
+        alert('Ошибка скачивания: ' + e.message); 
+      }
+    }
+
+    function copyExportLink() {
+      navigator.clipboard.writeText(document.getElementById('export-link').textContent)
+        .then(() => alert('✅ Скопировано!'))
+        .catch(() => alert('❌ Ошибка'));
+    }
+
+    // ========== VIDEO PLAYER ==========
+    function openVideoPlayer(url, name) {
+      currentStreamUrl = url;
+      originalStreamUrl = url;
+      const modal = document.getElementById('video-modal');
+      const video = document.getElementById('video-player');
+      const titleEl = document.getElementById('video-title');
+      const urlDisplay = document.getElementById('stream-url-display');
+      const loadingEl = document.getElementById('video-loading');
+      const errorEl = document.getElementById('video-error');
+
+      titleEl.textContent = name || 'Канал';
+      urlDisplay.textContent = url;
+      loadingEl.style.display = 'block';
+      errorEl.style.display = 'none';
+      video.style.display = 'block';
+
+      if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+      video.src = '';
+      video.load();
+
+      let sourceUrl = url;
+      let useProxy = false;
+      
+      if (window.location.protocol === 'https:' && url.startsWith('http:')) {
+        console.log("Using proxy for mixed content stream");
+        sourceUrl = `${API}/stream`;
+        useProxy = true;
+      }
+
+      if (Hls.isSupported() && (sourceUrl.includes('.m3u8') || sourceUrl.includes('m3u8') || sourceUrl.includes('index.m3u8'))) {
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 90,
+          xhrSetup: function(xhr) {
+            if (useProxy) xhr.setRequestHeader('X-Stream-URL', url);
+          }
+        });
+
+        hlsInstance.loadSource(sourceUrl);
+        hlsInstance.attachMedia(video);
+
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          loadingEl.style.display = 'none';
+          video.play().catch(e => {
+            console.error("Autoplay blocked:", e);
+            loadingEl.style.display = 'none';
+          });
+        });
+
+        hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+          console.error("HLS Error:", data);
+          if (data.fatal) {
+            loadingEl.style.display = 'none';
+            errorEl.style.display = 'block';
+          }
+        });
+
+      } else {
+        const fetchHeaders = {};
+        if (useProxy) fetchHeaders['X-Stream-URL'] = url;
+        
+        fetch(sourceUrl, { headers: fetchHeaders })
+          .then(r => {
+            if (!r.ok) throw new Error('Network error');
+            return r.blob();
+          })
+          .then(blob => {
+            video.src = URL.createObjectURL(blob);
+            loadingEl.style.display = 'none';
+            return video.play();
+          })
+          .catch(e => {
+            console.error("Fetch error:", e);
+            loadingEl.style.display = 'none';
+            errorEl.style.display = 'block';
+          });
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    function openStreamInNewTab() {
+      if(originalStreamUrl) window.open(originalStreamUrl, '_blank');
+    }
+
+    function copyStreamUrl() {
+      if(originalStreamUrl) {
+        navigator.clipboard.writeText(originalStreamUrl).then(() => {
+          alert('✅ Ссылка скопирована!\n\nОткройте в VLC:\nMedia → Open Network Stream → Вставить → Play');
+        });
+      }
+    }
+
+    function closeModal(id) {
+      if (id === 'video-modal') {
+        const video = document.getElementById('video-player');
+        video.pause();
+        video.src = '';
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        currentStreamUrl = '';
+      }
+      document.getElementById(id).style.display = 'none';
+    }
+
+    // ========== IMPORT ==========
+    async function openImportModal() {
+      try {
+        const playlists = await apiCall('/playlists');
+        let html = '<label>Выберите плейлист (или создайте новый)</label>';
+        html += '<select id="import-playlist-select" style="width:100%; padding:0.8rem; margin-bottom:1rem; background:var(--bg); border:1px solid var(--border); color:white; border-radius:6px;">';
+        html += '<option value="">→ Создать новый плейлист</option>';
+        playlists.forEach(p => html += `<option value="${p.id}" ${p.id == currentPlaylistId ? 'selected' : ''}>${p.name}</option>`);
+        html += '</select>';
+        document.getElementById('import-playlist-select-container').innerHTML = html;
+        document.getElementById('import-modal').style.display = 'flex';
+      } catch(e) { alert('Ошибка: ' + e.message); }
+    }
+
+    async function performImport() {
+      const playlistId = document.getElementById('import-playlist-select')?.value;
+      const url = document.getElementById('import-url').value;
+      const text = document.getElementById('import-text').value;
+      if(!url && !text) return alert('Введите URL или текст');
+      const data = {};
+      if(playlistId) data.playlist_id = parseInt(playlistId); 
+      else data.name = `Imported ${new Date().toLocaleDateString()}`;
+      if(url) data.url = url; 
+      if(text) data.content = text;
+      const endpoint = url ? '/playlists/import/url' : '/playlists/import/text';
+      try {
+        const result = await apiCall(endpoint, 'POST', data);
+        alert(`✅ Импортировано ${result.channels_count} каналов в "${result.playlist_name}"!`);
+        closeModal('import-modal');
+        document.getElementById('import-url').value = ''; 
+        document.getElementById('import-text').value = '';
+        loadPlaylists();
+        if(currentPlaylistId == result.playlist_id) await selectPlaylist(result.playlist_id, '');
+        else if (!playlistId) setTimeout(() => selectPlaylist(result.playlist_id, result.playlist_name), 500);
+        showSaveIndicator();
+      } catch(e) { alert('Ошибка: ' + e.message); }
+    }
+
+    // Event listeners
+    document.getElementById('auth-email')?.addEventListener('keypress', e => e.key === 'Enter' && requestCode());
+    document.getElementById('auth-code')?.addEventListener('keypress', e => e.key === 'Enter' && verifyCode());
+  </script>
+</body>
+</html>
