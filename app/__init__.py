@@ -1,29 +1,42 @@
-# Импортируем Base из базы данных
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.core.database import Base
-
-# Импортируем модели (они должны быть где-то определены)
-# Если у тебя есть файл app/models.py с классами User, Playlist, Channel
-# то раскомментируй строку ниже:
-# from app.models import User, Playlist, Channel
-
-# Если модели в этом же файле или в других файлах папки models/
-# то импортируй их отсюда
-
-# ВРЕМЕННО: создадим пустые заглушки чтобы приложение запустилось
-# УДАЛИ ЭТОТ КОГДА ДОБАВИШЬ РЕАЛЬНЫЕ МОДЕЛИ!
-from sqlalchemy import Column, Integer, String
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    playlist_token = Column(String, unique=True, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    playlists = relationship("Playlist", back_populates="owner", cascade="all, delete-orphan")
 
 class Playlist(Base):
     __tablename__ = "playlists"
-    id = Column(Integer, primary_key=True)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    owner_email = Column(String, ForeignKey("users.email"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    owner = relationship("User", back_populates="playlists")
+    channels = relationship("Channel", back_populates="playlist", cascade="all, delete-orphan")
 
 class Channel(Base):
     __tablename__ = "channels"
-    id = Column(Integer, primary_key=True)
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    url = Column(Text, nullable=False)
+    group_title = Column(String, nullable=True)
+    tvg_name = Column(String, nullable=True)
+    tvg_logo = Column(String, nullable=True)
+    playlist_id = Column(Integer, ForeignKey("playlists.id"), nullable=False)
+    active = Column(Boolean, default=True)
+    
+    playlist = relationship("Playlist", back_populates="channels")
 
 __all__ = ["Base", "User", "Playlist", "Channel"]
