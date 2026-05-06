@@ -4,9 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete as sql_delete, update as sql_update
 from app.core.database import get_db
 from app.core.security import generate_and_send_code, verify_code_and_login
-from app.models.user import User
-from app.models.playlist import Playlist
-from app.models.channel import Channel
+from app.models import User, Playlist, Channel
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta
