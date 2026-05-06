@@ -44,13 +44,12 @@ async def get_db():
             await session.close()
 
 # ==========================================
-# 🔄 LIFESPAN — ИСПРАВЛЕНО! БЕЗ DROP TABLE!
+# 🔄 LIFESPAN
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting JFork IPTV Backend...")
     
-    # ✅ Только создание таблиц, БЕЗ УДАЛЕНИЯ!
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         print("✅ Tables ready")
@@ -72,23 +71,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключаем роутер API
 app.include_router(api_router, prefix="/api/v1")
 
-# Создаем папку для статики
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ==========================================
-# 🔑 УТИЛИТА: ГЕНЕРАЦИЯ КОРОТКОГО ТОКЕНА
+# 🔑 TOKEN GENERATOR
 # ==========================================
 def generate_playlist_token(length: int = 10) -> str:
-    """Генерирует токен как у konkurentov: abc123def4"""
     chars = string.ascii_lowercase + string.digits
     return ''.join(secrets.choice(chars) for _ in range(length))
 
 # ==========================================
-# 📺 IPTV ENDPOINTS — ПРЯМЫЕ ССЫЛКИ (В main.py для надежности)
+# 📺 IPTV ENDPOINTS
 # ==========================================
 
 @app.get("/api/v1/playlists/{playlist_id}/get-direct-link")
@@ -97,11 +93,6 @@ async def get_direct_playlist_link_main(
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Генерирует/возвращает прямую ссылку на плейлист:
-    → /list/abc123def4.m3u
-    """
-    # Декодируем токен
     try:
         token = authorization.split(" ")[1]
         decoded = base64.urlsafe_b64decode(token.encode()).decode()
@@ -111,13 +102,11 @@ async def get_direct_playlist_link_main(
         raise HTTPException(status_code=401, detail="Invalid token")
     
     async with async_session() as session:
-        # Ищем пользователя
         result = await session.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         
-        # Проверяем доступ к плейлисту
         result = await session.execute(select(Playlist).where(
             Playlist.id == playlist_id,
             Playlist.owner_email == user.email
@@ -126,7 +115,6 @@ async def get_direct_playlist_link_main(
         if not playlist:
             raise HTTPException(status_code=404, detail="Playlist not found")
         
-        # Если у пользователя нет токена — генерируем
         if not user.playlist_token:
             while True:
                 new_token = generate_playlist_token()
@@ -136,7 +124,6 @@ async def get_direct_playlist_link_main(
                     await session.commit()
                     break
         
-        # Формируем ссылки
         base_url = os.getenv("BASE_URL", "https://jfork777-iptv-jfork-backend.hf.space")
         direct_link = f"{base_url}/list/{user.playlist_token}.m3u"
         
@@ -152,35 +139,138 @@ async def get_direct_playlist_link_main(
             }
         }
 
-# ✅ Основной формат: /list/TOKEN.m3u или /p/TOKEN.m3u
+# ==========================================
+# 🔍 DEBUG ENDPOINTS
+# ==========================================
+
+@app.get("/list/test")
+async def test_list():
+    """Проверка что endpoint работает"""
+    return {"status": "ok", "message": "List endpoint is working"}
+
+@app.get("/list/check/{token}")
+async def check_token(token: str, db: AsyncSession = Depends(get_db)):
+    """Проверка токена в базе"""
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.playlist_token == token))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return {"found": False, "token": token, "message": "Token not found in database"}
+        
+        result = await session.execute(
+            select(Playlist).where(Playlist.owner_email == user.email)
+        )
+        playlists = result.scalars().all()
+        
+        return {
+            "found": True,
+            "token": token,
+            "email": user.email,
+            "playlists_count": len(playlists),
+            "playlist_ids": [p.id for p in playlists]
+        }
+
+# ==========================================
+# ✅ OPTIONS HANDLER (CORS)
+# ==========================================
+
+@app.options("/list/{token}.m3u")
+@app.options("/list/{token}.m3u8")
+@app.options("/p/{token}.m3u")
+@app.options("/p/{token}.m3u8")
+@app.options("/list/{token}/{playlist_id}.m3u")
+@app.options("/list/{token}/{playlist_id}.m3u8")
+@app.options("/p/{token}/{playlist_id}.m3u")
+@app.options("/p/{token}/{playlist_id}.m3u8")
+async def list_options():
+    return Response(
+        content="",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+# ==========================================
+# 📥 MAIN EXPORT ENDPOINT
+# ==========================================
+
+@app.get("/list/{token}/{playlist_id}.m3u")
+@app.get("/list/{token}/{playlist_id}.m3u8")
+@app.get("/p/{token}/{playlist_id}.m3u")
+@app.get("/p/{token}/{playlist_id}.m3u8")
 @app.get("/list/{token}.m3u")
 @app.get("/list/{token}.m3u8")
 @app.get("/p/{token}.m3u")
 @app.get("/p/{token}.m3u8")
-async def iptv_with_ext(token: str, db: AsyncSession = Depends(get_db)):
-    """Защищенный экспорт по короткому токену"""
-    if not token or len(token) < 6:
-        raise HTTPException(status_code=404, detail="Invalid token")
-
+async def iptv_with_ext(token: str, playlist_id: int = None, db: AsyncSession = Depends(get_db)):
+    """Универсальный экспорт с отладкой"""
+    print(f"📥 Запрос плейлиста: token={token}, playlist_id={playlist_id}")
+    
     async with async_session() as session:
-        # Ищем пользователя по короткому токену
-        result = await session.execute(select(User).where(User.playlist_token == token))
-        user = result.scalar_one_or_none()
+        user = None
+        
+        # Пробуем найти по короткому токену
+        if len(token) >= 6 and len(token) <= 20 and token.replace('_', '').replace('-', '').isalnum():
+            result = await session.execute(select(User).where(User.playlist_token == token))
+            user = result.scalar_one_or_none()
+            if user:
+                print(f"✅ Найдено пользователя: {user.email}")
+            else:
+                print(f"❌ Пользователь с токеном '{token}' не найден!")
+        
+        # Пробуем декодировать base64
         if not user:
-            raise HTTPException(status_code=404, detail="Playlist not found")
-
-        # Берём первый активный плейлист
-        result = await session.execute(
-            select(Playlist).where(
-                Playlist.owner_email == user.email,
-                Playlist.is_active == True
-            ).order_by(Playlist.id).limit(1)
-        )
+            try:
+                clean_token = unquote(token)
+                missing_padding = len(clean_token) % 4
+                if missing_padding:
+                    clean_token += '=' * (4 - missing_padding)
+                decoded = base64.urlsafe_b64decode(clean_token.encode()).decode()
+                email = decoded.split(":")[0]
+                print(f"🔍 Декодирован base64 токен: email={email}")
+                
+                result = await session.execute(select(User).where(User.email == email))
+                user = result.scalar_one_or_none()
+            except Exception as e:
+                print(f"⚠️ Token decode failed: {e}")
+        
+        if not user:
+            print(f"❌ 404: Пользователь не найден")
+            raise HTTPException(status_code=404, detail="Playlist not found - user not found")
+        
+        # Берём первый плейлист
+        if playlist_id:
+            try:
+                result = await session.execute(
+                    select(Playlist).where(
+                        Playlist.id == int(playlist_id),
+                        Playlist.owner_email == user.email
+                    ).limit(1)
+                )
+            except:
+                result = await session.execute(
+                    select(Playlist).where(
+                        Playlist.owner_email == user.email
+                    ).order_by(Playlist.id).limit(1)
+                )
+        else:
+            result = await session.execute(
+                select(Playlist).where(
+                    Playlist.owner_email == user.email
+                ).order_by(Playlist.id).limit(1)
+            )
+        
         playlist_obj = result.scalar_one_or_none()
         if not playlist_obj:
+            print(f"❌ 404: Нет плейлистов у {user.email}")
             raise HTTPException(status_code=404, detail="No active playlist")
-
-        # Получаем каналы
+        
+        print(f"✅ Плейлист: {playlist_obj.name} (id={playlist_obj.id})")
+        
+        # Получаем активные каналы
         result = await session.execute(
             select(Channel).where(
                 Channel.playlist_id == playlist_obj.id,
@@ -188,10 +278,13 @@ async def iptv_with_ext(token: str, db: AsyncSession = Depends(get_db)):
             ).order_by(Channel.group_title, Channel.name)
         )
         channels = result.scalars().all()
-
+        
         if not channels:
+            print(f"❌ 404: Нет активных каналов в плейлисте")
             raise HTTPException(status_code=404, detail="Playlist is empty")
-
+        
+        print(f"✅ Найдено {len(channels)} активных каналов")
+        
         # Формируем M3U
         m3u_lines = ["#EXTM3U"]
         for ch in channels:
@@ -202,24 +295,29 @@ async def iptv_with_ext(token: str, db: AsyncSession = Depends(get_db)):
                 f'#EXTINF:-1 tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}'
             )
             m3u_lines.append(ch.url)
-
+        
         m3u_content = "\n".join(m3u_lines) + "\n"
-
-        # Ключевые заголовки для IPTV-плееров
+        print(f"✅ Отправляем плейлист размером {len(m3u_content)} байт")
+        
         return Response(
             content=m3u_content,
-            media_type="application/vnd.apple.mpegurl",
+            media_type="audio/x-mpegurl",
             headers={
-                "Content-Disposition": f'inline; filename="{user.email}.m3u"',
-                "Cache-Control": "public, max-age=300",
+                "Content-Disposition": f'attachment; filename="playlist.m3u"',
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
                 "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
                 "Access-Control-Allow-Headers": "*",
+                "Connection": "keep-alive",
             }
         )
 
 # ==========================================
 # 🌐 WEB & HEALTH
 # ==========================================
+
 @app.get("/")
 @app.get("/dashboard")
 async def serve(): 
