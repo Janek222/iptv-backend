@@ -14,7 +14,6 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True
-    # sslmode уже в DATABASE_URL от Neon, connect_args не нужен
 )
 
 # Session Factory
