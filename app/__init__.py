@@ -1,7 +1,10 @@
+# Импортируем ТОЛЬКО Base из database.py
+from app.core.database import Base
+
+# Остальные классы определяем ЗДЕСЬ
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.core.database import Base
 
 class User(Base):
     __tablename__ = "users"
