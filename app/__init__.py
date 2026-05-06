@@ -3,7 +3,6 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -13,7 +12,6 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     playlists = relationship("Playlist", back_populates="owner", cascade="all, delete-orphan")
 
-# 📺 Playlist модель
 class Playlist(Base):
     __tablename__ = "playlists"
     id = Column(Integer, primary_key=True, index=True)
@@ -23,7 +21,6 @@ class Playlist(Base):
     owner = relationship("User", back_populates="playlists")
     channels = relationship("Channel", back_populates="playlist", cascade="all, delete-orphan")
 
-# 📡 Channel модель
 class Channel(Base):
     __tablename__ = "channels"
     id = Column(Integer, primary_key=True, index=True)
@@ -36,5 +33,4 @@ class Channel(Base):
     active = Column(Boolean, default=True)
     playlist = relationship("Playlist", back_populates="channels")
 
-# ✅ Экспорт
 __all__ = ["Base", "User", "Playlist", "Channel"]
