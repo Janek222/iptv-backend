@@ -12,7 +12,6 @@ import base64
 import time
 import secrets
 import string
-
 from app.models import Base, User, Playlist, Channel
 from app.api.router import router as api_router
 
