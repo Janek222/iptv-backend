@@ -9,6 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User
 import base64
 import secrets
+import os
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+
+# Если ключа нет - не падай, а просто предупреди
+if not RESEND_API_KEY:
+    print("⚠️ RESEND_API_KEY not set - email sending disabled")
 
 # ==========================================
 # НАСТРОЙКИ (из переменных окружения)
